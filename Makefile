@@ -1,4 +1,4 @@
-PROGRAM = LED_Strip
+PROGRAM = main
 
 EXTRA_COMPONENTS = \
 	extras/http-parser \
