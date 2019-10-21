@@ -34,6 +34,8 @@
 #define LED_COUNT 70            // this is the number of WS2812B leds on the strip
 #define LED_RGB_SCALE 255       // this is the scaling factor used for color conversion
 
+
+
 // Global variables
 float led_hue = 0;              // hue is scaled 0 to 360
 float led_saturation = 59;      // saturation is scaled 0 to 100
@@ -46,6 +48,9 @@ void switch_on_callback(homekit_characteristic_t *_ch, homekit_value_t on, void 
 
 void button_callback(uint8_t gpio, button_event_t event);
 
+
+ ws2812_pixel_t current_color = { { 0, 0, 0, 0 } };
+ws2812_pixel_t target_color = { { 0, 0, 0, 0 } };
 
 
 //http://blog.saikoled.com/post/44677718712/how-to-convert-from-hsi-to-rgb-white
@@ -93,15 +98,16 @@ void led_string_fill(ws2812_pixel_t rgb) {
   }
   ws2812_i2s_update(pixels, PIXEL_RGB);
 }
-
+/*
 void led_string_set(void) {
   ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
+ // ws2812_pixel_t rgb1 = { { 0, 0, 0, 0 } };
 
   if (power_on) {
     // convert HSI to RGBW
     hsi2rgb(led_hue, led_saturation, led_brightness, &rgb);
  //   printf("h=%d,s=%d,b=%d => ", (int)led_hue, (int)led_saturation, (int)led_brightness);
-  //  printf("r=%d,g=%d,b=%d,w=%d\n", rgb.red, rgb.green, rgb.blue, rgb.white);
+   printf("r=%d,g=%d,b=%d,w=%d\n", rgb.red, rgb.green, rgb.blue, rgb.white);
 
     // set the inbuilt led
     gpio_write(LED_INBUILT_GPIO, LED_ON);
@@ -113,8 +119,10 @@ void led_string_set(void) {
   }
 
   // write out the new color
-  led_string_fill(rgb);
+ 
+ led_string_fill(rgb);
 }
+*/
 
 void led_init() {
   // initialise the onboard led as a secondary indicator (handy for testing)
@@ -124,7 +132,7 @@ void led_init() {
   ws2812_i2s_init(LED_COUNT, PIXEL_RGB);
 
   // set the initial state
-  led_string_set();
+ // led_string_set();
 }
 
 void led_identify_task(void *_args) {
@@ -143,7 +151,7 @@ void led_identify_task(void *_args) {
     vTaskDelay(250 / portTICK_PERIOD_MS);
   }
 
-  led_string_set();
+ // led_string_set();
   vTaskDelete(NULL);
 }
 
@@ -162,7 +170,7 @@ void led_brightness_set(homekit_value_t value) {
     return;
   }
   led_brightness = value.int_value;
-  led_string_set();
+ // led_string_set();
 }
 
 homekit_value_t led_hue_get() {
@@ -175,7 +183,7 @@ void led_hue_set(homekit_value_t value) {
     return;
   }
   led_hue = value.float_value;
-  led_string_set();
+ // led_string_set();
 }
 
 homekit_value_t led_saturation_get() {
@@ -188,7 +196,7 @@ void led_saturation_set(homekit_value_t value) {
     return;
   }
   led_saturation = value.float_value;
-  led_string_set();
+ // led_string_set();
 }
 
 void reset_configuration_task() {
@@ -225,7 +233,7 @@ homekit_characteristic_t lightbulb_on = HOMEKIT_CHARACTERISTIC_(ON, false, .call
 
 void switch_on_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context) {
 	power_on = lightbulb_on.value.bool_value;
-	led_string_set();
+//	led_string_set();
 }
 
 void button_callback(uint8_t gpio, button_event_t event) {
@@ -244,6 +252,132 @@ void button_callback(uint8_t gpio, button_event_t event) {
      printf("unknown button event: %d\n", event);
   }
 }
+
+void led_string_set(void *pvParameters) {
+  ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
+  ws2812_pixel_t rgb1 = { { 0, 0, 0, 0 } };
+	int  x = 1,x1 = 1,x2 = 1;
+
+	while(1){
+
+  if (power_on) {
+    // convert HSI to RGBW
+    hsi2rgb(led_hue, led_saturation, led_brightness, &rgb);
+ //   printf("h=%d,s=%d,b=%d => ", (int)led_hue, (int)led_saturation, (int)led_brightness);
+  // printf("r=%d,g=%d,b=%d,w=%d\n", rgb.red, rgb.green, rgb.blue, rgb.white);
+	     	target_color.red = rgb.red;
+            target_color.green = rgb.green;
+            target_color .blue = rgb.blue;
+            target_color .white = rgb.white;
+		
+    // set the inbuilt led
+    gpio_write(LED_INBUILT_GPIO, LED_ON);
+ //   printf("on\n");
+  }
+  else {
+   // printf("off\n");
+   			target_color.red = 0;
+            target_color.green = 0;
+            target_color .blue = 0;
+            target_color .white = 0;
+    gpio_write(LED_INBUILT_GPIO, 1 - LED_ON);
+  }
+  
+  //////////////////////////
+  
+  
+  	   if(current_color.red < target_color.red){
+      
+      x = (target_color.red - rgb1.red )/ 20;
+    	
+    
+ 	  
+ 	  	rgb1.red += (x < 1)? 1 : x;
+ 	  if(rgb1.red >= target_color.red){
+      	rgb1.red = target_color.red;
+      	current_color.red = target_color.red;
+      	}
+      	
+      
+        }
+        
+       else if(current_color.red > target_color.red){
+      
+      x = (rgb1.red - target_color.red)/ 20;
+    
+ 	 
+ 	  	rgb1.red -= (x < 1)? 1 : x;
+ 	  if(rgb1.red <= target_color.red){
+      	rgb1.red = target_color.red;
+      	current_color.red = target_color.red;
+      	}
+      	
+      
+        }
+        
+          if(current_color.green < target_color.green){
+      
+      x1 = (target_color.green - rgb1.green )/ 20;
+    
+ 	  
+ 	  	rgb1.green += (x1 < 1)? 1 : x1;
+ 	  if(rgb1.green >= target_color.green){
+      	rgb1.green = target_color.green;
+      	current_color.green = target_color.green;
+      	}
+      	
+      
+        }
+        
+       else if(current_color.green > target_color.green){
+      
+      x1 = (rgb1.green - target_color.green)/ 20;
+    
+ 	  
+ 	  	rgb1.green -= (x1 < 1)? 1 : x1;
+ 	  if(rgb1.green <= target_color.green){
+      	rgb1.green = target_color.green;
+      	current_color.green = target_color.green;
+      	}
+      	
+      
+        }
+        
+       if(current_color.blue < target_color.blue){
+      
+      x2 = (target_color.blue - rgb1.blue )/ 20;
+    
+ 	  
+ 	  	rgb1.blue += (x2 < 1)? 1 : x2;
+ 	  if(rgb1.blue >= target_color.blue){
+      	rgb1.blue = target_color.blue;
+      	current_color.blue = target_color.blue;
+      	}
+      	
+      
+        }else if(current_color.blue > target_color.blue){
+      
+      x2 = (rgb1.blue - target_color.blue)/ 20;
+    
+ 	  
+ 	  	rgb1.blue -= (x2 < 1)? 1 : x2;
+ 	  if(rgb1.blue <= target_color.blue){
+      	rgb1.blue = target_color.blue;
+      	current_color.blue = target_color.blue;
+      	}
+      	
+      
+        }
+  		
+  		led_string_fill(rgb1);
+  
+  
+           			vTaskDelay(10/ portTICK_PERIOD_MS);
+
+        }
+}
+
+
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
 homekit_characteristic_t name = HOMEKIT_CHARACTERISTIC_(NAME, "ws2812_i2s");
 homekit_characteristic_t man = HOMEKIT_CHARACTERISTIC_(MANUFACTURER, "Kriss");
@@ -256,8 +390,8 @@ homekit_accessory_t *accessories[] = {
       &name,
       &man,
       HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "037A2BABF19D"),
-      HOMEKIT_CHARACTERISTIC(MODEL, "LEDStrip"),
-      HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "0.1"),
+      HOMEKIT_CHARACTERISTIC(MODEL, "ws2812_i2s"),
+      HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "0.1.5"),
       HOMEKIT_CHARACTERISTIC(IDENTIFY, led_identify),
       NULL
     }),
@@ -304,14 +438,15 @@ void user_init(void) {
   // accessory name suffix.
   uint8_t macaddr[6];
   sdk_wifi_get_macaddr(STATION_IF, macaddr);
-  int name_len = snprintf(NULL, 0, "LED Strip-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
+  int name_len = snprintf(NULL, 0, "ws2812_i2s-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
   char *name_value = malloc(name_len + 1);
-  snprintf(name_value, name_len + 1, "LED Strip-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
+  snprintf(name_value, name_len + 1, "ws2812_i2s-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
   name.value = HOMEKIT_STRING(name_value);
 
   wifi_config_init("ws2812_i2s Strip", NULL, on_wifi_ready);
   led_init();
-	
+	    xTaskCreate(led_string_set, "led string set", 256, NULL, 2, NULL);
+
   gpio_enable(button_gpio, GPIO_INPUT);
   if (button_create(button_gpio, 0, 10000, button_callback)) {
     printf("Failed to initialize button\n");

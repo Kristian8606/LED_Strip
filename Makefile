@@ -1,4 +1,4 @@
-PROGRAM = main
+PROGRAM = LED_Strip
 
 EXTRA_COMPONENTS = \
 	extras/http-parser \
@@ -6,10 +6,10 @@ EXTRA_COMPONENTS = \
 	extras/dhcpserver \
 	extras/i2s_dma \
 	extras/ws2812_i2s \
-	$(abspath ../../external_libs/wolfssl) \
-	$(abspath ../../external_libs/cJSON) \
-	$(abspath ../../external_libs/homekit) \
-	$(abspath ../../external_libs/wifi_config) \
+	$(abspath ../../components/esp-8266/wifi_config) \
+	$(abspath ../../components/esp-8266/cJSON) \
+	$(abspath ../../components/common/wolfssl) \
+	$(abspath ../../components/common/homekit)
 
 ESPBAUD = 460800
 FLASH_SIZE ?= 8
@@ -22,9 +22,9 @@ HOMEKIT_SMALL = 0
 HOMEKIT_OVERCLOCK = 1
 HOMEKIT_OVERCLOCK_PAIR_SETUP = 1
 HOMEKIT_OVERCLOCK_PAIR_VERIFY = 1
-EXTRA_CFLAGS += -I../.. -DHOMEKIT_SHORT_APPLE_UUIDS -DWIFI_CONFIG_CONNECT_TIMEOUT=180000
+EXTRA_CFLAGS += -I../.. -DHOMEKIT_SHORT_APPLE_UUIDS
 
-include $(abspath ../../sdk/esp-open-rtos/common.mk)
+include $(SDK_PATH)/common.mk
 
 LIBS += m
 

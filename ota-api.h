@@ -18,6 +18,10 @@
 
 unsigned int  ota_read_sysparam(char **manufacturer,char **serial,char **model,char **revision);
 
+void save_characteristic_to_flash (homekit_characteristic_t *ch, homekit_value_t value);
+
+void load_characteristic_from_flash (homekit_characteristic_t *ch);
+
 void ota_update(void *arg);
 
 void ota_set(homekit_value_t value);
