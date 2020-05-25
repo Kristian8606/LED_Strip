@@ -30,7 +30,7 @@
 #include "ws2812_i2s/ws2812_i2s.h"
 #include "ota-api.h"
 #include <math.h>
-
+#include "fmod.h"
 #define max(a,b) \
 ({ __typeof__ (a) _a = (a); \
 __typeof__ (b) _b = (b); \
@@ -83,15 +83,15 @@ ws2812_pixel_t target_color = { { 0, 0, 0, 0 } };
 void hsi2rgbw(float H, float S, float I, ws2812_pixel_t* rgbw) {
 	int r, g, b, w;
 	float cos_h, cos_1047_h;
-  while (H < 0) { H += 360.0F; };     // cycle h around to 0-360 degrees
-  while (H >= 360) { H -= 360.0F; };
-  
+ 
+ 	 H = fmod(H,360);  // cycle H around to 0-360 
   H = 3.14159*H/(float)180; // Convert to radians.
   S /= 100.0F;                        // from percentage to ratio
   I /= 100.0F;                        // from percentage to ratio
   S = S>0?(S<1?S:1):0; // clamp S and I to interval [0,1]
   I = I>0?(I<1?I:1):0;
   I = I * sqrt(I);                    // shape intensity to have finer granularity near 0
+  
   // Math! Thanks in part to Kyle Miller.                 // shape intensity to have finer granularity near 0
 
      if(H < 2.09439) {
