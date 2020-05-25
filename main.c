@@ -22,19 +22,37 @@
 #include <task.h>
 #include <math.h>
 #include "button.h"
-
+#include <etstimer.h>
+#include <time.h>
 #include <homekit/homekit.h>
 #include <homekit/characteristics.h>
 #include <wifi_config.h>
 #include "ws2812_i2s/ws2812_i2s.h"
 #include "ota-api.h"
+#include <math.h>
+
+#define max(a,b) \
+({ __typeof__ (a) _a = (a); \
+__typeof__ (b) _b = (b); \
+_a > _b ? _a : _b; })
+#define min(a,b) \
+({ __typeof__ (a) _a = (a); \
+__typeof__ (b) _b = (b); \
+_a < _b ? _a : _b; })
+
+#define DEG_TO_RAD(X) (M_PI*(X)/180)
+
+
+ #define randnum(min, max) \
+        ((rand() % (int)(((max) + 1) - (min))) + (min))
 
 #define LED_ON 0                // this is the value to write to GPIO for led on (0 = GPIO low)
 #define LED_INBUILT_GPIO 2      // this is the onboard LED used to show on/off only
-#define LED_COUNT 70            // this is the number of WS2812B leds on the strip
+#define LED_COUNT 100            // this is the number of WS2812B leds on the strip
 #define LED_RGB_SCALE 255       // this is the scaling factor used for color conversion
 
-
+TimerHandle_t xColorTimer = NULL;
+int color_delay = 20;
 
 // Global variables
 float led_hue = 0;              // hue is scaled 0 to 360
@@ -44,17 +62,102 @@ bool power_on = false;            // on is boolean on or off
 const int button_gpio = 0;      // Button GPIO pin - Click On/Off, 10s Hold Reset
 ws2812_pixel_t pixels[LED_COUNT];
 
+ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
+ws2812_pixel_t rgb1 = { { 0, 0, 0, 0 } };
+int  x = 1,x1 = 1,x2 = 1;
+bool color_loop_bool = false;
+
 void switch_on_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context);
+void update_hue(homekit_characteristic_t *ch, homekit_value_t value, void *context);
+
 
 void button_callback(uint8_t gpio, button_event_t event);
 
+void c_loop(homekit_characteristic_t *_ch, homekit_value_t on, void *context);
 
  ws2812_pixel_t current_color = { { 0, 0, 0, 0 } };
 ws2812_pixel_t target_color = { { 0, 0, 0, 0 } };
 
 
 //http://blog.saikoled.com/post/44677718712/how-to-convert-from-hsi-to-rgb-white
-static void hsi2rgb(float h, float s, float i, ws2812_pixel_t* rgb) {
+void hsi2rgbw(float h, float s, float i, ws2812_pixel_t* rgbw) {
+
+    float cos_h, cos_1047_h;
+    int r, g, b, w;
+    
+  h = 3.14159*h/(float)180; // Convert to radians.
+ 
+    
+    while (h < 0) { h += 360.0F; };     // cycle h around to 0-360 degrees
+    while (h >= 360) { h -= 360.0F; };
+    
+  //  s /= 100.0F;                        // from percentage to ratio
+   // i /= 100.0F;                        // from percentage to ratio
+   
+  
+   
+    s = s > 0 ? (s < 1 ? s : 1) : 0;    // clamp s and i to interval [0,1]
+    i = i > 0 ? (i < 1 ? i : 1) : 0;    // clamp s and i to interval [0,1]
+    //i = i * sqrt(i);                    // shape intensity to have finer granularity near 0
+     if(h < 2.09439) {
+    cos_h = cos(h);
+    cos_1047_h = cos(1.047196667-h);
+    r = s*255*i/3*(1+cos_h/cos_1047_h);
+    g = s*255*i/3*(1+(1-cos_h/cos_1047_h));
+    b = 0;
+    w = 255*(1-s)*i;
+  } else if(h < 4.188787) {
+    h = h - 2.09439;
+    cos_h = cos(h);
+    cos_1047_h = cos(1.047196667-h);
+    g = s*255*i/3*(1+cos_h/cos_1047_h);
+    b = s*255*i/3*(1+(1-cos_h/cos_1047_h));
+    r = 0;
+    w = 255*(1-s)*i;
+  } else {
+    h = h - 4.188787;
+    cos_h = cos(h);
+    cos_1047_h = cos(1.047196667-h);
+    b = s*255*i/3*(1+cos_h/cos_1047_h);
+    r = s*255*i/3*(1+(1-cos_h/cos_1047_h));
+    g = 0;
+    w = 255*(1-s)*i;
+  }
+  /*  if (h < 2.09439) {
+        cos_h = cos(h);
+        cos_1047_h = cos(1.047196667 - h);
+        r = s * LED_RGB_SCALE * i / 3 * (1 + s * cos_h / cos_1047_h);
+        g = s * LED_RGB_SCALE * i / 3 * (1 + s * (1 - cos_h / cos_1047_h));
+        b = 0;
+    }
+    else if (h < 4.188787) {
+        h = h - 2.09439;
+        cos_h = cos(h);
+        cos_1047_h = cos(1.047196667 - h);
+        g = s * LED_RGB_SCALE * i  / 3 * (1 + s * cos_h / cos_1047_h);
+        b = s * LED_RGB_SCALE * i  / 3 * (1 + s * (1 - cos_h / cos_1047_h));
+        r = 0;
+    }
+    else {
+        h = h - 4.188787;
+        cos_h = cos(h);
+        cos_1047_h = cos(1.047196667 - h);
+        b = s * LED_RGB_SCALE * i  / 3 * (1 + s * cos_h / cos_1047_h);
+        r = s * LED_RGB_SCALE * i  / 3 * (1 + s * (1 - cos_h / cos_1047_h));
+        g = s * 0;
+    }
+    
+    w = LED_RGB_SCALE * i * (1 -s);
+    */
+    rgbw->red = (uint8_t) r;
+    rgbw->green = (uint8_t) g;
+    rgbw->blue = (uint8_t) b;
+    rgbw->white= (uint8_t) w;
+}
+
+//http://blog.saikoled.com/post/44677718712/how-to-convert-from-hsi-to-rgb-white
+/*
+static void hsi2rgbw(float h, float s, float i, ws2812_pixel_t* rgb) {
   int r, g, b;
 
   while (h < 0) { h += 360.0F; };     // cycle h around to 0-360 degrees
@@ -89,7 +192,7 @@ static void hsi2rgb(float h, float s, float i, ws2812_pixel_t* rgb) {
   rgb->blue = (uint8_t) b;
   rgb->white = (uint8_t) 0;           // white channel is not used
 }
-
+*/
 void led_string_fill(ws2812_pixel_t rgb) {
 
   // write out the new color to each pixel
@@ -98,31 +201,7 @@ void led_string_fill(ws2812_pixel_t rgb) {
   }
   ws2812_i2s_update(pixels, PIXEL_RGB);
 }
-/*
-void led_string_set(void) {
-  ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
- // ws2812_pixel_t rgb1 = { { 0, 0, 0, 0 } };
 
-  if (power_on) {
-    // convert HSI to RGBW
-    hsi2rgb(led_hue, led_saturation, led_brightness, &rgb);
- //   printf("h=%d,s=%d,b=%d => ", (int)led_hue, (int)led_saturation, (int)led_brightness);
-   printf("r=%d,g=%d,b=%d,w=%d\n", rgb.red, rgb.green, rgb.blue, rgb.white);
-
-    // set the inbuilt led
-    gpio_write(LED_INBUILT_GPIO, LED_ON);
- //   printf("on\n");
-  }
-  else {
-  //   printf("off\n");
-    gpio_write(LED_INBUILT_GPIO, 1 - LED_ON);
-  }
-
-  // write out the new color
- 
- led_string_fill(rgb);
-}
-*/
 
 void led_init() {
   // initialise the onboard led as a secondary indicator (handy for testing)
@@ -143,12 +222,12 @@ void led_identify_task(void *_args) {
     for (int j = 0; j < 3; j++) {
       gpio_write(LED_INBUILT_GPIO, LED_ON);
       led_string_fill(COLOR_PINK);
-      vTaskDelay(100 / portTICK_PERIOD_MS);
+      vTaskDelay(200 / portTICK_PERIOD_MS);
       gpio_write(LED_INBUILT_GPIO, 1 - LED_ON);
       led_string_fill(COLOR_BLACK);
-      vTaskDelay(100 / portTICK_PERIOD_MS);
+      vTaskDelay(200 / portTICK_PERIOD_MS);
     }
-    vTaskDelay(250 / portTICK_PERIOD_MS);
+    vTaskDelay(350 / portTICK_PERIOD_MS);
   }
 
  // led_string_set();
@@ -173,6 +252,7 @@ void led_brightness_set(homekit_value_t value) {
  // led_string_set();
 }
 
+/*
 homekit_value_t led_hue_get() {
   return HOMEKIT_FLOAT(led_hue);
 }
@@ -183,8 +263,10 @@ void led_hue_set(homekit_value_t value) {
     return;
   }
   led_hue = value.float_value;
+  printf("hue-value format: %f\n", led_hue);
  // led_string_set();
 }
+*/
 
 homekit_value_t led_saturation_get() {
   return HOMEKIT_FLOAT(led_saturation);
@@ -199,6 +281,8 @@ void led_saturation_set(homekit_value_t value) {
  // led_string_set();
 }
 
+
+
 void reset_configuration_task() {
   //Flash the LED first before we start the reset
   const ws2812_pixel_t COLOR_PINK = { { 255, 0, 127, 0 } };
@@ -206,10 +290,10 @@ void reset_configuration_task() {
   for (int i=0; i<3; i++) {
     gpio_write(LED_INBUILT_GPIO, LED_ON);
     led_string_fill(COLOR_PINK);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
     gpio_write(LED_INBUILT_GPIO, 1 - LED_ON);
     led_string_fill(COLOR_BLACK);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
+    vTaskDelay(200 / portTICK_PERIOD_MS);
   }
   printf("Resetting Wifi Config\n");
   wifi_config_reset();
@@ -231,8 +315,11 @@ void reset_configuration() {
 
 homekit_characteristic_t lightbulb_on = HOMEKIT_CHARACTERISTIC_(ON, false, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(switch_on_callback));
 
+
 void switch_on_callback(homekit_characteristic_t *_ch, homekit_value_t on, void *context) {
 	power_on = lightbulb_on.value.bool_value;
+	
+	
 //	led_string_set();
 }
 
@@ -253,17 +340,14 @@ void button_callback(uint8_t gpio, button_event_t event) {
   }
 }
 
-void led_string_set(void *pvParameters) {
-  ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
-  ws2812_pixel_t rgb1 = { { 0, 0, 0, 0 } };
-	int  x = 1,x1 = 1,x2 = 1;
 
-	while(1){
 
-  if (power_on) {
+void led_strip_set(int delay, float hue){
+
+	 if (power_on) {
     // convert HSI to RGBW
-    hsi2rgb(led_hue, led_saturation, led_brightness, &rgb);
- //   printf("h=%d,s=%d,b=%d => ", (int)led_hue, (int)led_saturation, (int)led_brightness);
+    hsi2rgbw(hue, led_saturation, led_brightness, &rgb);
+  // printf("h=%d,s=%d,b=%d => ", (int)led_hue, (int)led_saturation, (int)led_brightness);
   // printf("r=%d,g=%d,b=%d,w=%d\n", rgb.red, rgb.green, rgb.blue, rgb.white);
 	     	target_color.red = rgb.red;
             target_color.green = rgb.green;
@@ -372,16 +456,80 @@ void led_string_set(void *pvParameters) {
   		led_string_fill(rgb1);
   
   
-           			vTaskDelay(10/ portTICK_PERIOD_MS);
+           			vTaskDelay(delay / portTICK_PERIOD_MS);
 
-        }
+        
+}
+
+void led_strip_task(void *pvParameters) {
+  
+
+	while(1){
+	
+	
+		 led_strip_set(color_delay,led_hue);
+	
+	}
+
+ 
+}
+
+void c_loop(homekit_characteristic_t *_ch, homekit_value_t on, void *context) {
+	 printf(" color-loop is: %d\n", on.bool_value);
+	color_loop_bool = on.bool_value;
+	
+	if(color_loop_bool && power_on){
+		
+		xTimerStart(xColorTimer, 0 );
+		color_delay = 50;
+		srand(time(NULL));
+		}else{
+		xTimerStop(xColorTimer,0);
+		color_delay = 20;
+		}
+		
+	
+		
+  
+		
+}
+
+homekit_characteristic_t hue_set  = HOMEKIT_CHARACTERISTIC_(HUE, 0, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(update_hue));
+homekit_characteristic_t color_loop  = HOMEKIT_CHARACTERISTIC_(CUSTOM_COLOR_LOOP,  false, .callback=HOMEKIT_CHARACTERISTIC_CALLBACK(c_loop));
+
+
+void timer_color_loop(){
+	
+	
+	if(power_on){
+   // printf("%d\n", randnum(1, 70));
+    
+     led_hue  = randnum(0,359);
+      printf("set color random %f\n", led_hue);	
+       
+	 hue_set.value.float_value = led_hue;
+     homekit_characteristic_notify(&hue_set, hue_set.value);
+     }else{
+      color_loop.value.bool_value = false;
+	homekit_characteristic_notify(&color_loop, color_loop.value);
+     }
+            	
 }
 
 
+
 homekit_characteristic_t ota_trigger  = API_OTA_TRIGGER;
-homekit_characteristic_t name = HOMEKIT_CHARACTERISTIC_(NAME, "ws2812_i2s");
+homekit_characteristic_t name = HOMEKIT_CHARACTERISTIC_(NAME, "WS2812_i2s");
 homekit_characteristic_t man = HOMEKIT_CHARACTERISTIC_(MANUFACTURER, "Kriss");
 
+void update_hue(homekit_characteristic_t *ch, homekit_value_t value, void *context) {
+
+    printf("update_hue %f\n", hue_set.value.float_value);
+    led_hue = hue_set.value.float_value;
+    
+   
+     
+}
 
 
 homekit_accessory_t *accessories[] = {
@@ -390,30 +538,28 @@ homekit_accessory_t *accessories[] = {
       &name,
       &man,
       HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "037A2BABF19D"),
-      HOMEKIT_CHARACTERISTIC(MODEL, "ws2812_i2s"),
-      HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "0.1.5"),
+      HOMEKIT_CHARACTERISTIC(MODEL, "WS2812_i2s"),
+      HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "0.2.6"),
       HOMEKIT_CHARACTERISTIC(IDENTIFY, led_identify),
       NULL
     }),
     HOMEKIT_SERVICE(LIGHTBULB, .primary = true, .characteristics = (homekit_characteristic_t*[]) {
-      HOMEKIT_CHARACTERISTIC(NAME, "ws2812_i2s"),
+      HOMEKIT_CHARACTERISTIC(NAME, "WS2812_i2s"),
       HOMEKIT_CHARACTERISTIC(
         BRIGHTNESS, 100,
         .getter = led_brightness_get,
         .setter = led_brightness_set
       ),
-      HOMEKIT_CHARACTERISTIC(
-        HUE, 0,
-        .getter = led_hue_get,
-        .setter = led_hue_set
-      ),
+  
       HOMEKIT_CHARACTERISTIC(
         SATURATION, 0,
         .getter = led_saturation_get,
         .setter = led_saturation_set
       ),
+      &hue_set,
       &lightbulb_on,
       &ota_trigger,
+      &color_loop,
       NULL
     }),
     NULL
@@ -438,14 +584,15 @@ void user_init(void) {
   // accessory name suffix.
   uint8_t macaddr[6];
   sdk_wifi_get_macaddr(STATION_IF, macaddr);
-  int name_len = snprintf(NULL, 0, "ws2812_i2s-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
+  int name_len = snprintf(NULL, 0, "WS2812_i2s-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
   char *name_value = malloc(name_len + 1);
-  snprintf(name_value, name_len + 1, "ws2812_i2s-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
+  snprintf(name_value, name_len + 1, "WS2812_i2s-%02X%02X%02X", macaddr[3], macaddr[4], macaddr[5]);
   name.value = HOMEKIT_STRING(name_value);
 
-  wifi_config_init("ws2812_i2s Strip", NULL, on_wifi_ready);
+  wifi_config_init2("WS2812_i2s Strip", NULL, on_wifi_ready);
   led_init();
-	    xTaskCreate(led_string_set, "led string set", 256, NULL, 2, NULL);
+	    xTaskCreate(led_strip_task, "led string task", 512, NULL, 2, NULL);
+	    xColorTimer = xTimerCreate("Color Timer",(5000/portTICK_PERIOD_MS),pdTRUE,0, timer_color_loop);
 
   gpio_enable(button_gpio, GPIO_INPUT);
   if (button_create(button_gpio, 0, 10000, button_callback)) {

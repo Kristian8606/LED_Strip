@@ -15,6 +15,17 @@
     | homekit_permissions_notify, \
     .value = HOMEKIT_BOOL_(_value), \
     ##__VA_ARGS__
+    
+#define HOMEKIT_CHARACTERISTIC_CUSTOM_COLOR_LOOP HOMEKIT_CUSTOM_UUID("F0000002")
+#define HOMEKIT_DECLARE_CHARACTERISTIC_CUSTOM_COLOR_LOOP(_value, ...) \
+    .type = HOMEKIT_CHARACTERISTIC_CUSTOM_COLOR_LOOP, \
+    .description = "Color Loop", \
+    .format = homekit_format_bool, \
+    .permissions = homekit_permissions_paired_read \
+    | homekit_permissions_paired_write \
+    | homekit_permissions_notify, \
+    .value = HOMEKIT_BOOL_(_value), \
+    ##__VA_ARGS__
 
 unsigned int  ota_read_sysparam(char **manufacturer,char **serial,char **model,char **revision);
 
