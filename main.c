@@ -62,7 +62,7 @@ bool power_on = false;            // on is boolean on or off
 const int button_gpio = 0;      // Button GPIO pin - Click On/Off, 10s Hold Reset
 ws2812_pixel_t pixels[LED_COUNT];
 
-ws2812_pixel_t rgb = { { 0, 0, 0, 0 } };
+ws2812_pixel_t rgbw = { { 0, 0, 0, 0 } };
 ws2812_pixel_t rgb1 = { { 0, 0, 0, 0 } };
 int  x = 1,x1 = 1,x2 = 1;
 bool color_loop_bool = false;
@@ -80,126 +80,58 @@ ws2812_pixel_t target_color = { { 0, 0, 0, 0 } };
 
 
 //http://blog.saikoled.com/post/44677718712/how-to-convert-from-hsi-to-rgb-white
-void hsi2rgbw(float h, float s, float i, ws2812_pixel_t* rgbw) {
-
-    float cos_h, cos_1047_h;
-    int r, g, b, w;
-    
-  h = 3.14159*h/(float)180; // Convert to radians.
- 
-    
-    while (h < 0) { h += 360.0F; };     // cycle h around to 0-360 degrees
-    while (h >= 360) { h -= 360.0F; };
-    
-  //  s /= 100.0F;                        // from percentage to ratio
-   // i /= 100.0F;                        // from percentage to ratio
-   
+void hsi2rgbw(float H, float S, float I, ws2812_pixel_t* rgbw) {
+	int r, g, b, w;
+	float cos_h, cos_1047_h;
+  while (H < 0) { H += 360.0F; };     // cycle h around to 0-360 degrees
+  while (H >= 360) { H -= 360.0F; };
   
-   
-    s = s > 0 ? (s < 1 ? s : 1) : 0;    // clamp s and i to interval [0,1]
-    i = i > 0 ? (i < 1 ? i : 1) : 0;    // clamp s and i to interval [0,1]
-    //i = i * sqrt(i);                    // shape intensity to have finer granularity near 0
-     if(h < 2.09439) {
-    cos_h = cos(h);
-    cos_1047_h = cos(1.047196667-h);
-    r = s*255*i/3*(1+cos_h/cos_1047_h);
-    g = s*255*i/3*(1+(1-cos_h/cos_1047_h));
+  H = 3.14159*H/(float)180; // Convert to radians.
+  S /= 100.0F;                        // from percentage to ratio
+  I /= 100.0F;                        // from percentage to ratio
+  S = S>0?(S<1?S:1):0; // clamp S and I to interval [0,1]
+  I = I>0?(I<1?I:1):0;
+  I = I * sqrt(I);                    // shape intensity to have finer granularity near 0
+  // Math! Thanks in part to Kyle Miller.                 // shape intensity to have finer granularity near 0
+
+     if(H < 2.09439) {
+    cos_h = cos(H);
+    cos_1047_h = cos(1.047196667-H);
+    r = S*255*I/3*(1+cos_h/cos_1047_h);
+    g = S*255*I/3*(1+(1-cos_h/cos_1047_h));
     b = 0;
-    w = 255*(1-s)*i;
-  } else if(h < 4.188787) {
-    h = h - 2.09439;
-    cos_h = cos(h);
-    cos_1047_h = cos(1.047196667-h);
-    g = s*255*i/3*(1+cos_h/cos_1047_h);
-    b = s*255*i/3*(1+(1-cos_h/cos_1047_h));
+    w = 255*(1-S)*I;
+  } else if(H < 4.188787) {
+    H = H - 2.09439;
+    cos_h = cos(H);
+    cos_1047_h = cos(1.047196667-H);
+    g = S*255*I/3*(1+cos_h/cos_1047_h);
+    b = S*255*I/3*(1+(1-cos_h/cos_1047_h));
     r = 0;
-    w = 255*(1-s)*i;
+    w = 255*(1-S)*I;
   } else {
-    h = h - 4.188787;
-    cos_h = cos(h);
-    cos_1047_h = cos(1.047196667-h);
-    b = s*255*i/3*(1+cos_h/cos_1047_h);
-    r = s*255*i/3*(1+(1-cos_h/cos_1047_h));
+    H = H - 4.188787;
+    cos_h = cos(H);
+    cos_1047_h = cos(1.047196667-H);
+    b = S*255*I/3*(1+cos_h/cos_1047_h);
+    r = S*255*I/3*(1+(1-cos_h/cos_1047_h));
     g = 0;
-    w = 255*(1-s)*i;
+    w = 255*(1-S)*I;
   }
-  /*  if (h < 2.09439) {
-        cos_h = cos(h);
-        cos_1047_h = cos(1.047196667 - h);
-        r = s * LED_RGB_SCALE * i / 3 * (1 + s * cos_h / cos_1047_h);
-        g = s * LED_RGB_SCALE * i / 3 * (1 + s * (1 - cos_h / cos_1047_h));
-        b = 0;
-    }
-    else if (h < 4.188787) {
-        h = h - 2.09439;
-        cos_h = cos(h);
-        cos_1047_h = cos(1.047196667 - h);
-        g = s * LED_RGB_SCALE * i  / 3 * (1 + s * cos_h / cos_1047_h);
-        b = s * LED_RGB_SCALE * i  / 3 * (1 + s * (1 - cos_h / cos_1047_h));
-        r = 0;
-    }
-    else {
-        h = h - 4.188787;
-        cos_h = cos(h);
-        cos_1047_h = cos(1.047196667 - h);
-        b = s * LED_RGB_SCALE * i  / 3 * (1 + s * cos_h / cos_1047_h);
-        r = s * LED_RGB_SCALE * i  / 3 * (1 + s * (1 - cos_h / cos_1047_h));
-        g = s * 0;
-    }
-    
-    w = LED_RGB_SCALE * i * (1 -s);
-    */
     rgbw->red = (uint8_t) r;
     rgbw->green = (uint8_t) g;
     rgbw->blue = (uint8_t) b;
-    rgbw->white= (uint8_t) w;
+    rgbw->white = (uint8_t) w;           // white channel is not used
 }
 
-//http://blog.saikoled.com/post/44677718712/how-to-convert-from-hsi-to-rgb-white
-/*
-static void hsi2rgbw(float h, float s, float i, ws2812_pixel_t* rgb) {
-  int r, g, b;
 
-  while (h < 0) { h += 360.0F; };     // cycle h around to 0-360 degrees
-  while (h >= 360) { h -= 360.0F; };
-  h = 3.14159F*h / 180.0F;            // convert to radians.
-  s /= 100.0F;                        // from percentage to ratio
-  i /= 100.0F;                        // from percentage to ratio
-  s = s > 0 ? (s < 1 ? s : 1) : 0;    // clamp s and i to interval [0,1]
-  i = i > 0 ? (i < 1 ? i : 1) : 0;    // clamp s and i to interval [0,1]
-  i = i * sqrt(i);                    // shape intensity to have finer granularity near 0
-
-  if (h < 2.09439) {
-    r = LED_RGB_SCALE * i / 3 * (1 + s * cos(h) / cos(1.047196667 - h));
-    g = LED_RGB_SCALE * i / 3 * (1 + s * (1 - cos(h) / cos(1.047196667 - h)));
-    b = LED_RGB_SCALE * i / 3 * (1 - s);
-  }
-  else if (h < 4.188787) {
-    h = h - 2.09439;
-    g = LED_RGB_SCALE * i / 3 * (1 + s * cos(h) / cos(1.047196667 - h));
-    b = LED_RGB_SCALE * i / 3 * (1 + s * (1 - cos(h) / cos(1.047196667 - h)));
-    r = LED_RGB_SCALE * i / 3 * (1 - s);
-  }
-  else {
-    h = h - 4.188787;
-    b = LED_RGB_SCALE * i / 3 * (1 + s * cos(h) / cos(1.047196667 - h));
-    r = LED_RGB_SCALE * i / 3 * (1 + s * (1 - cos(h) / cos(1.047196667 - h)));
-    g = LED_RGB_SCALE * i / 3 * (1 - s);
-  }
-
-  rgb->red = (uint8_t) r;
-  rgb->green = (uint8_t) g;
-  rgb->blue = (uint8_t) b;
-  rgb->white = (uint8_t) 0;           // white channel is not used
-}
-*/
-void led_string_fill(ws2812_pixel_t rgb) {
+void led_string_fill(ws2812_pixel_t rgbw) {
 
   // write out the new color to each pixel
   for (int i = 0; i < LED_COUNT; i++) {
-    pixels[i] = rgb;
+    pixels[i] = rgbw;
   }
-  ws2812_i2s_update(pixels, PIXEL_RGB);
+  ws2812_i2s_update(pixels, PIXEL_RGBW);
 }
 
 
@@ -208,7 +140,7 @@ void led_init() {
   gpio_enable(LED_INBUILT_GPIO, GPIO_OUTPUT);
 	
   // initialise the LED strip
-  ws2812_i2s_init(LED_COUNT, PIXEL_RGB);
+  ws2812_i2s_init(LED_COUNT, PIXEL_RGBW);
 
   // set the initial state
  // led_string_set();
@@ -251,22 +183,6 @@ void led_brightness_set(homekit_value_t value) {
   led_brightness = value.int_value;
  // led_string_set();
 }
-
-/*
-homekit_value_t led_hue_get() {
-  return HOMEKIT_FLOAT(led_hue);
-}
-
-void led_hue_set(homekit_value_t value) {
-  if (value.format != homekit_format_float) {
-    // printf("Invalid hue-value format: %d\n", value.format);
-    return;
-  }
-  led_hue = value.float_value;
-  printf("hue-value format: %f\n", led_hue);
- // led_string_set();
-}
-*/
 
 homekit_value_t led_saturation_get() {
   return HOMEKIT_FLOAT(led_saturation);
@@ -346,13 +262,13 @@ void led_strip_set(int delay, float hue){
 
 	 if (power_on) {
     // convert HSI to RGBW
-    hsi2rgbw(hue, led_saturation, led_brightness, &rgb);
+    hsi2rgbw(hue, led_saturation, led_brightness, &rgbw);
   // printf("h=%d,s=%d,b=%d => ", (int)led_hue, (int)led_saturation, (int)led_brightness);
   // printf("r=%d,g=%d,b=%d,w=%d\n", rgb.red, rgb.green, rgb.blue, rgb.white);
-	     	target_color.red = rgb.red;
-            target_color.green = rgb.green;
-            target_color .blue = rgb.blue;
-            target_color .white = rgb.white;
+	     	target_color.red = rgbw.red;
+            target_color.green = rgbw.green;
+            target_color .blue = rgbw.blue;
+            target_color .white = rgbw.white;
 		
     // set the inbuilt led
     gpio_write(LED_INBUILT_GPIO, LED_ON);
@@ -539,7 +455,7 @@ homekit_accessory_t *accessories[] = {
       &man,
       HOMEKIT_CHARACTERISTIC(SERIAL_NUMBER, "037A2BABF19D"),
       HOMEKIT_CHARACTERISTIC(MODEL, "WS2812_i2s"),
-      HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "0.2.6"),
+      HOMEKIT_CHARACTERISTIC(FIRMWARE_REVISION, "0.2.9"),
       HOMEKIT_CHARACTERISTIC(IDENTIFY, led_identify),
       NULL
     }),
